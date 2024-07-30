@@ -6,8 +6,8 @@ const uniqueValidator = require("mongoose-unique-validator");
  * Defines the structure for user data in the database.
  */
 const userSchema = mongoose.Schema({
-    email: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
+	email: { type: String, required: true, unique: true },
+	password: { type: String, required: true },
 });
 
 // Plugin to ensure email uniqueness

@@ -2,8 +2,8 @@ const express = require("express");
 const userCtrl = require("../controllers/user");
 
 /**
- * Router for user authentication endpoints.
- * This router handles user registration and login functionality.
+ * @description Router for user authentication endpoints
+ * @goal Efficiently manage user registration and login with secure practices
  */
 const router = express.Router();
 
