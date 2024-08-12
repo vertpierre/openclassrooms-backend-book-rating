@@ -14,12 +14,23 @@ const User = require("../models/User");
 /**
  * @description User registration handler
  * @goal Securely create new user accounts
+ * - Validates email format and uniqueness
  * - Hashes the password using bcrypt for enhanced security
  * - Creates a new user in the MongoDB database
- * - Implements error handling for database operations
+ * - Implements error handling for database operations and validation
  */
 exports.signup = async (req, res, next) => {
 	try {
+		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+		if (!emailRegex.test(req.body.email)) {
+			return res.status(400).json({ error: "Invalid email format" });
+		}
+
+		const existingUser = await User.findOne({ email: req.body.email });
+		if (existingUser) {
+			return res.status(409).json({ error: "An error occurred while creating the user" });
+		}
+
 		const hash = await bcrypt.hash(req.body.password, 10);
 		const user = new User({
 			email: req.body.email,
@@ -28,7 +39,11 @@ exports.signup = async (req, res, next) => {
 		await user.save();
 		res.status(201).json({ message: "User created successfully" });
 	} catch (error) {
-		res.status(500).json({ error: error.message });
+		if (error.name === 'ValidationError') {
+			res.status(400).json({ error: error.message });
+		} else {
+			res.status(500).json({ error: "An error occurred while creating the user" });
+		}
 	}
 };
 

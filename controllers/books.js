@@ -1,6 +1,5 @@
 const Book = require("../models/Books");
 const fs = require("fs");
-
 /**
  * @description Create a new book entry in the database
  * @goal Efficiently handle book creation with proper error handling and image URL generation
@@ -10,21 +9,22 @@ const fs = require("fs");
  * @returns {Object} JSON response with success message or error
  */
 exports.createBook = async (req, res, next) => {
-    try {
-        const bookObject = JSON.parse(req.body.book);
-        const { _id, _userId, ...safeBookObject } = bookObject;
-        
-        const book = new Book({
-            ...safeBookObject,
-            userId: req.auth.userId,
-            imageUrl: `${process.env.API_URL}/images/${req.file.filename}`,
-        });
+	try {
+		const mediaUrl = req.app.get("mediaUrl");
+		const bookObject = JSON.parse(req.body.book);
+		const { _id, _userId, ...safeBookObject } = bookObject;
 
-        await book.save();
-        res.status(201).json({ message: "Book added successfully!" });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
+		const book = new Book({
+			...safeBookObject,
+			userId: req.auth.userId,
+			imageUrl: `${mediaUrl}/images/${req.file.filename}`,
+		});
+
+		await book.save();
+		res.status(201).json({ message: "Book added successfully!" });
+	} catch (error) {
+		res.status(400).json({ error: error.message });
+	}
 };
 
 /**
@@ -36,30 +36,34 @@ exports.createBook = async (req, res, next) => {
  * @returns {Object} JSON response with success message or error
  */
 exports.modifyBook = async (req, res, next) => {
-    try {
-        const bookObject = req.file
-            ? {
-                ...JSON.parse(req.body.book),
-                imageUrl: `${process.env.API_URL}/images/${req.file.filename}`,
-            }
-            : { ...req.body };
+	try {
+		const mediaUrl = req.app.get("mediaUrl");
+		const bookObject = req.file
+			? {
+					...JSON.parse(req.body.book),
+					imageUrl: `${mediaUrl}/images/${req.file.filename}`,
+				}
+			: { ...req.body };
 
-        const { _userId, ...updateData } = bookObject;
+		const { _userId, ...updateData } = bookObject;
 
-        const book = await Book.findOne({ _id: req.params.id });
-        if (!book) {
-            return res.status(404).json({ message: "Book not found" });
-        }
+		const book = await Book.findOne({ _id: req.params.id });
+		if (!book) {
+			return res.status(404).json({ message: "Book not found" });
+		}
 
-        if (book.userId !== req.auth.userId) {
-            return res.status(403).json({ message: "Not authorized" });
-        }
+		if (book.userId !== req.auth.userId) {
+			return res.status(403).json({ message: "Not authorized" });
+		}
 
-        await Book.updateOne({ _id: req.params.id }, { ...updateData, _id: req.params.id });
-        res.status(200).json({ message: "Book updated successfully!" });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
+		await Book.updateOne(
+			{ _id: req.params.id },
+			{ ...updateData, _id: req.params.id },
+		);
+		res.status(200).json({ message: "Book updated successfully!" });
+	} catch (error) {
+		res.status(400).json({ error: error.message });
+	}
 };
 
 /**
@@ -71,27 +75,35 @@ exports.modifyBook = async (req, res, next) => {
  * @returns {Object} JSON response with success message or error
  */
 exports.deleteBook = async (req, res, next) => {
-    try {
-        const book = await Book.findOne({ _id: req.params.id });
-        if (!book) {
-            return res.status(404).json({ message: "Book not found" });
-        }
+	try {
+		const mediaDir = req.app.get("mediaDir");
+		const book = await Book.findOne({ _id: req.params.id });
 
-        if (book.userId !== req.auth.userId) {
-            return res.status(403).json({ message: "Not authorized" });
-        }
+		if (!book) {
+			return res.status(404).json({ message: "Book not found" });
+		}
 
-        const filename = book.imageUrl.split("/images/")[1];
-        fs.unlink(`images/${filename}`, async (err) => {
-            if (err) {
-                console.error("Error deleting image:", err);
-            }
-            await Book.deleteOne({ _id: req.params.id });
-            res.status(200).json({ message: "Book deleted successfully!" });
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+		if (book.userId !== req.auth.userId) {
+			return res.status(403).json({ message: "Not authorized" });
+		}
+
+		const filename = book.imageUrl.split("/images/")[1];
+
+		try {
+			await fs.promises.unlink(`${mediaDir}/images/${filename}`);
+		} catch (fileError) {
+			console.error("Error deleting file:", fileError);
+			// Continue with book deletion even if file deletion fails
+		}
+
+		await Book.deleteOne({ _id: req.params.id });
+		res.status(200).json({ message: "Book deleted successfully!" });
+	} catch (error) {
+		console.error("Error in deleteBook:", error);
+		res
+			.status(500)
+			.json({ error: "An error occurred while deleting the book" });
+	}
 };
 
 /**
@@ -102,15 +114,15 @@ exports.deleteBook = async (req, res, next) => {
  * @returns {Object} JSON response with book data or error
  */
 exports.getOneBook = async (req, res, next) => {
-    try {
-        const book = await Book.findOne({ _id: req.params.id });
-        if (!book) {
-            return res.status(404).json({ message: "Book not found" });
-        }
-        res.status(200).json(book);
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
+	try {
+		const book = await Book.findOne({ _id: req.params.id });
+		if (!book) {
+			return res.status(404).json({ message: "Book not found" });
+		}
+		res.status(200).json(book);
+	} catch (error) {
+		res.status(400).json({ error: error.message });
+	}
 };
 
 /**
@@ -121,28 +133,42 @@ exports.getOneBook = async (req, res, next) => {
  * @returns {Object} JSON response with array of books or error
  */
 exports.getAllBooks = async (req, res, next) => {
-    try {
-        const books = await Book.find();
-        res.status(200).json(books);
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
+	try {
+		const books = await Book.find();
+		res.status(200).json(books);
+	} catch (error) {
+		res.status(400).json({ error: error.message });
+	}
 };
 
 /**
  * @description Retrieve top 3 rated books
- * @goal Efficiently fetch and return the top 3 highest-rated books
- * - Uses async/await for cleaner code structure
- * - Implements efficient sorting and limiting in the database query
+ * @goal Efficiently fetch and return the top 3 highest-rated books using MongoDB aggregation
+ * - Uses MongoDB aggregation pipeline for server-side sorting and limiting
+ * - Reduces data transfer and processing load on the application server
  * @returns {Object} JSON response with array of top 3 books or error
  */
 exports.getBestRatedBooks = async (req, res, next) => {
-    try {
-        const books = await Book.find().sort({ averageRating: -1 }).limit(3);
-        res.status(200).json(books);
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
+	try {
+		const books = await Book.aggregate([
+			{ $sort: { averageRating: -1 } },
+			{ $limit: 3 },
+			{
+				$project: {
+					_id: 1,
+					title: 1,
+					author: 1,
+					imageUrl: 1,
+					year: 1,
+					genre: 1,
+					averageRating: 1,
+				},
+			},
+		]);
+		res.status(200).json(books);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
 };
 
 /**
@@ -154,31 +180,33 @@ exports.getBestRatedBooks = async (req, res, next) => {
  * @returns {Object} JSON response with updated book data or error
  */
 exports.rateBook = async (req, res, next) => {
-    try {
-        const { userId, rating } = req.body;
-        const book = await Book.findOne({ _id: req.params.id });
+	try {
+		const { userId, rating } = req.body;
+		const book = await Book.findOne({ _id: req.params.id });
 
-        if (!book) {
-            return res.status(404).json({ message: "Book not found" });
-        }
+		if (!book) {
+			return res.status(404).json({ message: "Book not found" });
+		}
 
-        // Optimization: Check if user has already rated before pushing new rating
-        if (book.ratings.some((r) => r.userId === userId)) {
-            return res.status(400).json({ message: "You have already rated this book" });
-        }
+		// Optimization: Check if user has already rated before pushing new rating
+		if (book.ratings.some((r) => r.userId === userId)) {
+			return res
+				.status(400)
+				.json({ message: "You have already rated this book" });
+		}
 
-        // Add new rating to the array
-        book.ratings.push({ userId, grade: rating });
+		// Add new rating to the array
+		book.ratings.push({ userId, grade: rating });
 
-        // Optimization: Use the existing average to calculate the new average
-        // This avoids recalculating the sum of all ratings
-        const oldTotal = book.averageRating * (book.ratings.length - 1);
-        const newTotal = oldTotal + rating;
-        book.averageRating = Number((newTotal / book.ratings.length).toFixed(3));
+		// Optimization: Use the existing average to calculate the new average
+		// This avoids recalculating the sum of all ratings
+		const oldTotal = book.averageRating * (book.ratings.length - 1);
+		const newTotal = oldTotal + rating;
+		book.averageRating = Number((newTotal / book.ratings.length).toFixed(3));
 
-        const updatedBook = await book.save();
-        res.status(200).json(updatedBook);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+		const updatedBook = await book.save();
+		res.status(200).json(updatedBook);
+	} catch (error) {
+		res.status(500).json({ error: error.message });
+	}
 };

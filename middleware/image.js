@@ -55,7 +55,8 @@ const optimizeImage = async (req, res, next) => {
 	if (!req.file) return next();
 
 	const filename = `${req.file.originalname.split(" ").join("_")}-${Date.now()}.webp`;
-	const outputPath = path.join("images", filename);
+	const outputDir = process.env.NODE_ENV === "production" ? "images" : "__tests__/images";
+	const outputPath = path.join(outputDir, filename);
 
 	try {
 		await sharp(req.file.buffer)

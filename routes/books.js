@@ -1,7 +1,7 @@
 const express = require("express");
 const bookCtrl = require("../controllers/books");
 const auth = require("../middleware/auth");
-const multer = require("../middleware/image");
+const image = require("../middleware/image");
 
 /**
  * @description Router for book-related endpoints
@@ -24,10 +24,10 @@ router.get("/:id", bookCtrl.getOneBook);
  * @description Protected routes (authentication required)
  * @goal Secure book manipulation operations and user-specific actions
  * - Uses auth middleware to ensure user authentication before accessing sensitive operations
- * - Implements multer middleware for efficient file upload handling in create and update operations
+ * - Implements image middleware for efficient file upload handling in create and update operations
  */
-router.post("/", auth, multer, bookCtrl.createBook);
-router.put("/:id", auth, multer, bookCtrl.modifyBook);
+router.post("/", auth, image, bookCtrl.createBook);
+router.put("/:id", auth, image, bookCtrl.modifyBook);
 router.delete("/:id", auth, bookCtrl.deleteBook);
 router.post("/:id/rating", auth, bookCtrl.rateBook);
 

@@ -8,6 +8,7 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const path = require("path");
+const compression = require("compression");
 require("dotenv").config();
 
 // Import route handlers
@@ -19,13 +20,24 @@ const userRoutes = require("./routes/user");
  */
 const app = express();
 
+// Use compression middleware to compress responses in gzip format
+app.use(compression());
+
+// Make the mediaUrl available to other modules
+const mediaDir = process.env.NODE_ENV === "production" ? process.env.MEDIA_DIR : process.env.DEV_MEDIA_DIR;
+app.set("mediaDir", mediaDir);
+app.set("mediaUrl", `${process.env.API_URL}/${mediaDir}`);
+
+// Set the database URL based on the environment
+const dbUrl = process.env.NODE_ENV === "production" ? process.env.MONGODB_URI : process.env.DEV_MONGODB_URI;
+
 /**
  * @description Connect to MongoDB using environment variables
  * @goal Establish database connection asynchronously for better error handling
  */
 const connectToMongoDB = async () => {
 	try {
-		await mongoose.connect(process.env.MONGODB_URI, {
+		await mongoose.connect(dbUrl, {
 			useNewUrlParser: true,
 			useUnifiedTopology: true,
 		});
@@ -75,13 +87,23 @@ app.use("/api/auth", userRoutes);
 /**
  * @description Serve static files (book cover images)
  * @goal Efficiently serve static assets
- * Use caching headers for static files in production
+ * Use different paths for development and production environments
  */
-app.use(
-	"/images",
-	express.static(path.join(__dirname, "images"), {
-		maxAge: "1d", // Cache static files for 1 day
-	}),
-);
+if (process.env.NODE_ENV === "production") {
+	app.use(
+		"/images",
+		express.static(path.join(__dirname, "images"), {
+			maxAge: "1d", // Cache static files for 1 day in production
+			fallthrough: false, // Return 404 if file not found
+		}),
+	);
+} else {
+	app.use(
+		`/${process.env.DEV_MEDIA_DIR}/images`,
+		express.static(path.join(__dirname, process.env.DEV_MEDIA_DIR, "images"), {
+			fallthrough: false, // Return 404 if file not found
+		}),
+	);
+}
 
 module.exports = app;
