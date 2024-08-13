@@ -38,12 +38,16 @@ exports.createBook = async (req, res, next) => {
 exports.modifyBook = async (req, res, next) => {
 	try {
 		const mediaUrl = req.app.get("mediaUrl");
-		const bookObject = req.file
-			? {
-					...JSON.parse(req.body.book),
-					imageUrl: `${mediaUrl}/images/${req.file.filename}`,
-				}
-			: { ...req.body };
+		let bookObject;
+
+		if (req.file) {
+			bookObject = {
+				...JSON.parse(req.body.book),
+				imageUrl: `${mediaUrl}/images/${req.file.filename}`,
+			};
+		} else {
+			bookObject = { ...req.body };
+		}
 
 		const { _userId, ...updateData } = bookObject;
 
@@ -53,7 +57,9 @@ exports.modifyBook = async (req, res, next) => {
 		}
 
 		if (book.userId !== req.auth.userId) {
-			return res.status(403).json({ message: "Not authorized" });
+			return res
+				.status(403)
+				.json({ message: "Unauthorized modification attempt" });
 		}
 
 		await Book.updateOne(
@@ -182,13 +188,21 @@ exports.getBestRatedBooks = async (req, res, next) => {
 exports.rateBook = async (req, res, next) => {
 	try {
 		const { userId, rating } = req.body;
+
 		const book = await Book.findOne({ _id: req.params.id });
 
 		if (!book) {
 			return res.status(404).json({ message: "Book not found" });
 		}
 
-		// Optimization: Check if user has already rated before pushing new rating
+		// Check if the rating is between 1 and 5
+		if (rating < 1 || rating > 5) {
+			return res
+				.status(400)
+				.json({ message: "Rating must be between 1 and 5" });
+		}
+
+		// Check if the user has already rated the book
 		if (book.ratings.some((r) => r.userId === userId)) {
 			return res
 				.status(400)

@@ -20,7 +20,12 @@ async function migrateData() {
     console.log(`Found ${books.length} documents in test.books`);
 
     if (books.length > 0) {
-      const booksResult = await targetDb.collection('books').insertMany(books);
+      // Update imageUrl for each book
+      const updatedBooks = books.map(book => ({
+        ...book,
+        imageUrl: book.imageUrl.replace('http://localhost:4000/images/', 'http://localhost:4000/__tests__/images/')
+      }));
+      const booksResult = await targetDb.collection('books').insertMany(updatedBooks);
       console.log(`${booksResult.insertedCount} documents inserted into book-rating.books`);
     }
 

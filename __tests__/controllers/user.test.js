@@ -1,21 +1,16 @@
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const User = require('../../models/User');
 const userController = require('../../controllers/user');
-
-let mongoServer;
+require("dotenv").config();
 
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  const mongoUri = mongoServer.getUri();
-  await mongoose.connect(mongoUri);
+  await mongoose.connect(process.env.DEV_MONGODB_URI);
 });
 
 afterAll(async () => {
-  await mongoose.disconnect();
-  await mongoServer.stop();
+  await mongoose.connection.close();
 });
 
 describe('User Controller Test', () => {
@@ -35,6 +30,9 @@ describe('User Controller Test', () => {
       await userController.signup(req, res);
 
       expect(res.status).toHaveBeenCalledWith(201);
+
+      //delete this specific user
+      await User.deleteOne({ email: 'test1@example.com' });
     });
 
     it('should return an error for invalid email format', async () => {
@@ -75,6 +73,9 @@ describe('User Controller Test', () => {
       await userController.signup(req, res);
 
       expect(res.status).toHaveBeenCalledWith(409);
+
+      //delete this specific user
+      await User.deleteOne({ email: 'existing@example.com' });
     });
   });
 
@@ -107,6 +108,9 @@ describe('User Controller Test', () => {
       expect(response).toHaveProperty('token');
       expect(response.userId).toBeInstanceOf(mongoose.Types.ObjectId);
       expect(typeof response.token).toBe('string');
+
+      //delete this specific user
+      await User.deleteOne({ email: 'test2@example.com' });
     });
 
     it('should return an error for non-existent user', async () => {
@@ -148,6 +152,9 @@ describe('User Controller Test', () => {
       await userController.login(req, res);
 
       expect(res.status).toHaveBeenCalledWith(401);
+
+      //delete this specific user
+      await User.deleteOne({ email: 'test3@example.com' });
     });
   });
 });

@@ -3,8 +3,15 @@ const path = require('path');
 const request = require('supertest');
 const express = require('express');
 const imageMiddleware = require('../../middleware/image');
+const mongoose = require('mongoose');
+
+afterAll(async () => {
+  await mongoose.connection.close();
+});
 
 describe('Image Middleware Test', () => {
+  // Create a temporary express app with upload route
+  // to attach the image middleware
   const app = express();
   app.use(imageMiddleware);
   app.post('/upload', (req, res) => {
