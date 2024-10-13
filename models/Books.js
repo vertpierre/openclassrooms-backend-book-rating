@@ -1,28 +1,23 @@
 const mongoose = require("mongoose");
 
 /**
- * @description Book schema for MongoDB
- * @goal Define a robust and efficient structure for book data in the database
- * - Uses Mongoose schema for data validation and type checking
- * - Implements default value for averageRating to ensure consistency
- * - Nested schema for ratings to support efficient updates and queries
- * - Schema design supports potential future features like book categories or multiple authors
- * - Ratings array allows for easy calculation of statistics and trending books
+ * Book schema for MongoDB.
+ * Defines the structure for book data in the database.
  */
 const bookSchema = mongoose.Schema({
+	userId: { type: String, required: true },
 	title: { type: String, required: true },
 	author: { type: String, required: true },
 	imageUrl: { type: String, required: true },
-	userId: { type: String, required: true },
 	year: { type: Number, required: true },
 	genre: { type: String, required: true },
 	ratings: [
 		{
 			userId: { type: String, required: true },
-			grade: { type: Number, required: true, min: 1, max: 5 },
+			grade: { type: Number, required: true, min: 0, max: 5 },
 		},
 	],
-	averageRating: { type: Number, default: 0 },
+	averageRating: { type: Number, required: true },
 });
 
 module.exports = mongoose.model("Book", bookSchema);
