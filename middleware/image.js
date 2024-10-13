@@ -1,11 +1,6 @@
-/**
- * @description Image upload and optimization middleware for Mon Vieux Grimoire
- * @goal Efficiently handle image uploads, validate file types, and optimize images for storage and performance
- */
-
 const multer = require("multer");
 const sharp = require("sharp");
-const path = require("path");
+const path = require("node:path");
 
 /**
  * @description Mapping of accepted MIME types to file extensions
@@ -17,12 +12,6 @@ const MIME_TYPES = {
 	"image/png": "png",
 	"image/webp": "webp",
 };
-
-/**
- * @description Multer storage configuration
- * @goal Use memory storage for temporary file handling to improve performance
- */
-const storage = multer.memoryStorage();
 
 /**
  * @description File filter for multer
@@ -39,40 +28,45 @@ const fileFilter = (req, file, cb) => {
 /**
  * @description Multer middleware configuration
  * @goal Set up multer for single file uploads with custom storage and file filtering
+ * - Use memory storage for temporary file handling to improve performance
  */
-const upload = multer({
-	storage: storage,
+const uploadImage = multer({
+	storage: multer.memoryStorage(),
 	fileFilter: fileFilter,
 }).single("image");
 
 /**
  * @description Image optimization middleware
- * @goal Process and optimize uploaded images for consistent quality and reduced file size
- * - Resize the image to a maximum of 1080 pixels x or y length
- * - Convert the image to webp format with 70% quality
+ * @goal Process and optimize uploaded images for consistent quality, reduced file size, and 1:1.26 aspect ratio
+ * - Resize the image to maintain a 1:1.26 aspect ratio
+ * - With a fixed height of 1080 pixels
+ * - Convert the image to webp format with 60% quality
  */
 const optimizeImage = async (req, res, next) => {
+
 	if (!req.file) return next();
 
 	const filename = `${req.file.originalname.split(" ").join("_")}-${Date.now()}.webp`;
-	const outputDir = process.env.NODE_ENV === "production" ? "images" : "__tests__/images";
-	const outputPath = path.join(outputDir, filename);
+	const outputPath = path.join(__dirname, "..", req.app.get("mediaURI"));
 
 	try {
-		await sharp(req.file.buffer)
-			.resize({ width: 1080, height: 1080, fit: "inside" })
-			.webp({ quality: 70 })
-			.toFile(outputPath);
+		const image = sharp(req.file.buffer);
+		const aspectRatio = 1 / 1.26;
+
+		const height = 1080;
+		const width = Math.round(height * aspectRatio);
+
+		await image
+			.resize({ width, height, fit: "cover" })
+			.webp({ quality: 60 })
+			.toFile(path.join(outputPath, filename));
 
 		req.file.filename = filename;
+		req.optimizedImageUrl = `${req.app.get("apiURI")}/${req.app.get("mediaURI")}/${filename}`;
 		next();
 	} catch (error) {
 		next(error);
 	}
 };
 
-/**
- * @description Export middleware chain for image handling
- * @goal Provide a reusable middleware setup for image upload and optimization
- */
-module.exports = [upload, optimizeImage];
+module.exports = { uploadImage, optimizeImage };

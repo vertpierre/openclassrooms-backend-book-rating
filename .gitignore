@@ -1,3 +1,31 @@
+# Dependencies
 node_modules/
+
+# Environment variables
 .env
+
+# Media files
 images/
+
+# Test files
+__tests__/
+jest.config.js
+
+# Docker files
+.dockerignore
+Dockerfile
+
+# Build files
+build/
+
+# Package files
+package-lock.json
+
+# Miscellaneous
+scripts/
+utils/
+logs/
+tmp/
+.vscode/
+.cursorignore
+project.md

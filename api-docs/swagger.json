@@ -1,0 +1,444 @@
+{
+	"openapi": "3.0.0",
+	"info": {
+		"title": "Mon Vieux Grimoire API",
+		"description": "API for the 'Mon Vieux Grimoire' book rating application",
+		"version": "1.0.0"
+	},
+	"servers": [
+		{
+			"url": "http://localhost:4000/api",
+			"description": "Development server"
+		}
+	],
+	"paths": {
+		"/auth/signup": {
+			"post": {
+				"summary": "Register a new user",
+				"tags": ["Authentication"],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"email": {
+										"type": "string",
+										"format": "email"
+									},
+									"password": {
+										"type": "string",
+										"format": "password"
+									}
+								},
+								"required": ["email", "password"]
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "User created successfully"
+					},
+					"400": {
+						"description": "Invalid input or email already in use"
+					},
+					"500": {
+						"description": "Server error"
+					}
+				}
+			}
+		},
+		"/auth/login": {
+			"post": {
+				"summary": "Authenticate a user",
+				"tags": ["Authentication"],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"email": {
+										"type": "string",
+										"format": "email"
+									},
+									"password": {
+										"type": "string",
+										"format": "password"
+									}
+								},
+								"required": ["email", "password"]
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Authentication successful",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"userId": {
+											"type": "string"
+										},
+										"token": {
+											"type": "string"
+										}
+									}
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Invalid email/password combination"
+					},
+					"500": {
+						"description": "Server error"
+					}
+				}
+			}
+		},
+		"/books": {
+			"get": {
+				"summary": "Get all books",
+				"tags": ["Books"],
+				"responses": {
+					"200": {
+						"description": "Successful response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/Book"
+									}
+								}
+							}
+						}
+					},
+					"500": {
+						"description": "Server error"
+					}
+				}
+			},
+			"post": {
+				"summary": "Create a new book",
+				"tags": ["Books"],
+				"security": [
+					{
+						"BearerAuth": []
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"multipart/form-data": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"book": {
+										"type": "string",
+										"format": "json"
+									},
+									"image": {
+										"type": "string",
+										"format": "binary"
+									}
+								}
+							}
+						}
+					}
+				},
+				"responses": {
+					"201": {
+						"description": "Book created successfully"
+					},
+					"400": {
+						"description": "Invalid input"
+					},
+					"401": {
+						"description": "Unauthorized"
+					},
+					"500": {
+						"description": "Server error"
+					}
+				}
+			}
+		},
+		"/books/{id}": {
+			"get": {
+				"summary": "Get a specific book",
+				"tags": ["Books"],
+				"parameters": [
+					{
+						"in": "path",
+						"name": "id",
+						"required": true,
+						"schema": {
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Successful response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Book"
+								}
+							}
+						}
+					},
+					"404": {
+						"description": "Book not found"
+					},
+					"500": {
+						"description": "Server error"
+					}
+				}
+			},
+			"put": {
+				"summary": "Update a book",
+				"tags": ["Books"],
+				"security": [
+					{
+						"BearerAuth": []
+					}
+				],
+				"parameters": [
+					{
+						"in": "path",
+						"name": "id",
+						"required": true,
+						"schema": {
+							"type": "string"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"multipart/form-data": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"book": {
+										"type": "string",
+										"format": "json"
+									},
+									"image": {
+										"type": "string",
+										"format": "binary"
+									}
+								}
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Book updated successfully"
+					},
+					"400": {
+						"description": "Invalid input"
+					},
+					"401": {
+						"description": "Unauthorized"
+					},
+					"403": {
+						"description": "Forbidden"
+					},
+					"404": {
+						"description": "Book not found"
+					},
+					"500": {
+						"description": "Server error"
+					}
+				}
+			},
+			"delete": {
+				"summary": "Delete a book",
+				"tags": ["Books"],
+				"security": [
+					{
+						"BearerAuth": []
+					}
+				],
+				"parameters": [
+					{
+						"in": "path",
+						"name": "id",
+						"required": true,
+						"schema": {
+							"type": "string"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "Book deleted successfully"
+					},
+					"401": {
+						"description": "Unauthorized"
+					},
+					"403": {
+						"description": "Forbidden"
+					},
+					"404": {
+						"description": "Book not found"
+					},
+					"500": {
+						"description": "Server error"
+					}
+				}
+			}
+		},
+		"/books/{id}/rating": {
+			"post": {
+				"summary": "Rate a book",
+				"tags": ["Books"],
+				"security": [
+					{
+						"BearerAuth": []
+					}
+				],
+				"parameters": [
+					{
+						"in": "path",
+						"name": "id",
+						"required": true,
+						"schema": {
+							"type": "string"
+						}
+					}
+				],
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									"rating": {
+										"type": "number",
+										"minimum": 0,
+										"maximum": 5
+									}
+								},
+								"required": ["rating"]
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Book rated successfully",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Book"
+								}
+							}
+						}
+					},
+					"400": {
+						"description": "Invalid input or already rated"
+					},
+					"401": {
+						"description": "Unauthorized"
+					},
+					"404": {
+						"description": "Book not found"
+					},
+					"500": {
+						"description": "Server error"
+					}
+				}
+			}
+		},
+		"/books/bestrating": {
+			"get": {
+				"summary": "Get top 3 rated books",
+				"tags": ["Books"],
+				"responses": {
+					"200": {
+						"description": "Successful response",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "array",
+									"items": {
+										"$ref": "#/components/schemas/Book"
+									}
+								}
+							}
+						}
+					},
+					"500": {
+						"description": "Server error"
+					}
+				}
+			}
+		}
+	},
+	"components": {
+		"schemas": {
+			"Book": {
+				"type": "object",
+				"properties": {
+					"_id": {
+						"type": "string"
+					},
+					"userId": {
+						"type": "string"
+					},
+					"title": {
+						"type": "string"
+					},
+					"author": {
+						"type": "string"
+					},
+					"imageUrl": {
+						"type": "string"
+					},
+					"year": {
+						"type": "integer"
+					},
+					"genre": {
+						"type": "string"
+					},
+					"ratings": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"userId": {
+									"type": "string"
+								},
+								"grade": {
+									"type": "number"
+								}
+							}
+						}
+					},
+					"averageRating": {
+						"type": "number"
+					}
+				}
+			}
+		},
+		"securitySchemes": {
+			"BearerAuth": {
+				"type": "http",
+				"scheme": "bearer",
+				"bearerFormat": "JWT"
+			}
+		}
+	}
+}

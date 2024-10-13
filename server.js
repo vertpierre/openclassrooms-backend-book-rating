@@ -1,20 +1,9 @@
-/**
- * @description Server configuration and startup for Mon Vieux Grimoire backend
- * @goal Create a robust, scalable, and efficient HTTP server for the book rating application
- */
-
-// Load environment variables from .env file for secure configuration
-require("dotenv").config();
-
-// Import the HTTP server module and Express app
-// Use the node: protocol for better performance and security
-const http = require("http");
+const http = require("node:http");
 const app = require("./app");
 
 /**
  * @description Normalize a port into a number, string, or false
- * @goal Ensure consistent and valid port configuration
- * @returns {number|string|boolean} - The normalized port value
+ * @goal Convert port input to a valid number or return the original value if invalid
  */
 const normalizePort = (val) => {
     const port = Number.parseInt(val, 10);
@@ -23,42 +12,44 @@ const normalizePort = (val) => {
     return false;
 };
 
-// Set the port for the server using the PORT environment variable
-const port = normalizePort(process.env.PORT || "4000");
+// Set the port for the server using the apiPort from app.js
+const port = normalizePort(app.get("apiPort") || 4000);
 app.set("port", port);
 
 /**
  * @description Handle specific listen errors with friendly messages
- * @goal Improve error handling and debugging
+ * @goal Provide clear, actionable error messages for common server startup issues
  */
 const errorHandler = (error) => {
     if (error.syscall !== "listen") throw error;
 
+    // Format the port as a string
     const bind = typeof port === "string" ? `Pipe ${port}` : `Port ${port}`;
 
-    // Handle specific listen errors with messages
     switch (error.code) {
+        // If the port requires elevated privileges
         case "EACCES":
             console.error(`${bind} requires elevated privileges`);
             process.exit(1);
             break;
+        // If the port is already in use
         case "EADDRINUSE":
             console.error(`${bind} is already in use`);
             process.exit(1);
             break;
+        // If the port is not valid
         default:
             throw error;
     }
 };
 
 // Create the HTTP server
-// Use http.createServer for better performance compared to Express server
 const server = http.createServer(app);
 
 // Set up error handling for the server
 server.on("error", errorHandler);
 
-// Set up the listening handler
+// Set up the listening handler for incoming requests
 server.on("listening", () => {
     const addr = server.address();
     const bind = typeof addr === "string" ? `pipe ${addr}` : `port ${addr.port}`;
@@ -66,5 +57,4 @@ server.on("listening", () => {
 });
 
 // Start the server
-// Use the normalized port for consistent behavior across environments
 server.listen(port);
