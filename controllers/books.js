@@ -1,152 +1,135 @@
 const Book = require("../models/Books");
-const fs = require("node:fs");
+const mongoose = require("mongoose");
 
-/**
- * @description Retrieve all books from the database
- * @goal Efficiently fetch and return all books' data
- * - Ignores the ratings field to reduce data transfer
- * - Returns the averageRating rounded to 1 decimal place
- */
-exports.getAllBooks = async (req, res, next) => {
-	try {
-		const books = await Book.find().select("-ratings");
-		if (!books) {
-			throw new Error("404: No books found");
-		}
+// Reusable pipeline stages for aggregation queries
+const PIPELINE_STAGES = {
+	addFields: {
+		$addFields: {
+			id: "$_id",
+			imageUrl: {
+				$concat: [
+					`${process.env.API_URL}/api/books/`,
+					{ $toString: "$_id" },
+					"/image",
+				],
+			},
+		},
+	},
 
-		const formattedBooksData = books.map((book) => ({
-			...book.toObject(),
-			averageRating: Number(book.averageRating.toFixed(1)),
-		}));
-		res.status(200).json(formattedBooksData);
-	} catch (error) {
-		next(error);
-	}
+	project: {
+		$project: {
+			_id: 1,
+			id: 1,
+			title: 1,
+			author: 1,
+			year: 1,
+			genre: 1,
+			userId: 1,
+			imageUrl: 1,
+			averageRating: { $round: ["$averageRating", 1] },
+		},
+	},
+};
+
+// Indexes for optimizing common queries
+const INDEXES = {
+	byId: { _id: 1 },
+	byRating: { averageRating: -1 },
+	byTitleAuthor: { title: 1, author: 1 },
 };
 
 /**
- * @description Retrieve a specific book by its ID
- * @goal Efficiently fetch and return a single book's data
- * - Returns the averageRating rounded to 1 decimal place
- */
-exports.getOneBook = async (req, res, next) => {
-	try {
-		const book = await Book.findById(req.params.id);
-		if (!book) {
-			throw new Error("404: Book not found");
-		}
-
-		const bookData = {
-			...book.toObject(),
-			averageRating: Number(book.averageRating.toFixed(1)),
-		};
-		res.status(200).json(bookData);
-	} catch (error) {
-		next(error);
-	}
-};
-
-/**
- * @description Retrieve top 3 rated books
- * @goal Efficiently fetch and return the top 3 rated books
- * - Ignores the ratings field to reduce data transfer
- * - Returns the averageRating rounded to 1 decimal place
- */
-exports.getBestRatedBooks = async (req, res, next) => {
-	try {
-		const books = await Book.find()
-			.sort({ averageRating: -1 })
-			.limit(3)
-			.select("-ratings");
-		if (!books) {
-			throw new Error("404: No books found");
-		}
-
-		const formattedBooksData = books.map((book) => ({
-			...book.toObject(),
-			averageRating: Number(book.averageRating.toFixed(1)),
-		}));
-
-		res.status(200).json(formattedBooksData);
-	} catch (error) {
-		next(error);
-	}
-};
-
-/**
- * @description Create a new book entry in the database
- * @goal Efficiently handle book creation with proper error handling and image URI generation
- * - Verify that the image exists as it is required on this route
- * - Add sanitized imageUrl to the book object
+ * Creates a new book
  */
 exports.createBook = async (req, res, next) => {
 	try {
-		const sanitizedBookObject = req.validatedBook;
-
-		if (req.optimizedImageUrl) {
-			sanitizedBookObject.imageUrl = req.optimizedImageUrl;
-		} else {
-			throw new Error("400: Image is required");
+		if (!req.file) {
+			return res.status(400).json({ error: "Missing book image" });
 		}
 
 		const book = new Book({
-			...sanitizedBookObject,
+			...req.validatedBook,
 			userId: req.auth.userId,
+			image: req.file.buffer,
+			imageContentType: req.file.mimetype,
 		});
 
 		await book.save();
-		res.status(201).json({ message: "Book created successfully!" });
+		res.status(201).json({ message: "Book added successfully!" });
 	} catch (error) {
 		next(error);
 	}
 };
 
 /**
- * @description Modify an existing book entry
- * @goal Securely update book information while maintaining data integrity
- * - Conditionally updates image URI only when a new file is uploaded
- * - Deletes the old image from the file system when a new image is uploaded
+ * Updates an existing book
  */
 exports.modifyBook = async (req, res, next) => {
 	try {
-		const book = await Book.findById(req.params.id);
+		const book = await Book.findOne({ _id: req.params.id });
 		if (!book) {
-			throw new Error("404: Book not found");
+			return res.status(404).json({ error: "Book not found" });
 		}
 
-		const sanitizedBookObject = req.validatedBook;
-
-		if (req.optimizedImageUrl) {
-			sanitizedBookObject.imageUrl = req.optimizedImageUrl;
-			const oldImagePath = `${req.app.get("mediaURI")}/${book.imageUrl.split("/").pop()}`;
-			await fs.promises.unlink(oldImagePath).catch(() => {});
+		if (book.userId !== req.auth.userId) {
+			return res
+				.status(403)
+				.json({ error: "Unauthorized modification attempt" });
 		}
 
-		await Book.findByIdAndUpdate(req.params.id, { $set: sanitizedBookObject });
-		res.status(200).json({ message: "Book updated successfully!" });
+		const bookObject = req.file
+			? {
+					...JSON.parse(req.body.book),
+					image: req.file.buffer,
+					imageContentType: req.file.mimetype,
+				}
+			: {
+					...req.body,
+					image: book.image,
+					imageContentType: book.imageContentType,
+				};
+
+		const { _userId, ...updateData } = bookObject;
+
+		const updatedBook = await Book.findByIdAndUpdate(
+			req.params.id,
+			updateData,
+			{ new: true },
+		);
+
+		if (!updatedBook) {
+			return res.status(404).json({ error: "Book not found after update" });
+		}
+
+		const [formattedBook] = await Book.aggregate([
+			{ $match: { _id: updatedBook._id } },
+			{ $addFields: PIPELINE_STAGES.addFields.$addFields },
+			{ $project: PIPELINE_STAGES.project.$project },
+		]);
+
+		res.status(200).json(formattedBook);
 	} catch (error) {
 		next(error);
 	}
 };
 
 /**
- * @description Delete a book entry and its associated image
- * @goal Securely remove a book from the database and its image from the file system
- * - Implements proper authorization checks
- * - Ensures file system operations are handled correctly
+ * Deletes a book and its image
  */
 exports.deleteBook = async (req, res, next) => {
 	try {
-		const book = await Book.findById(req.params.id);
+		const book = await Book.findOne({ _id: req.params.id });
 		if (!book) {
-			throw new Error("404: Book not found");
+			return res.status(404).json({ error: "Book not found" });
 		}
 
-		const filename = book.imageUrl.split("/").pop();
-		const filePath = `${req.app.get("mediaURI")}/${filename}`;
-		await fs.promises.unlink(filePath);
-		
-		await Book.findByIdAndDelete(req.params.id);
+		if (book.userId !== req.auth.userId) {
+			return res
+				.status(403)
+				.json({ error: "Not authorized to delete this book" });
+		}
+
+		await Book.deleteOne({ _id: req.params.id });
 		res.status(200).json({ message: "Book deleted successfully!" });
 	} catch (error) {
 		next(error);
@@ -154,34 +137,213 @@ exports.deleteBook = async (req, res, next) => {
 };
 
 /**
- * @description Rate a book and update its average rating
- * @goal Securely add a user's rating to a book and recalculate the average rating
- * - Ensures a user can only rate a book once
- * - Use the existing average to calculate the new average, avoiding recalculating the sum of all ratings
- * - Calculates average rating with 3 decimal places on the server, returns 1 decimal place to client
+ * Gets a single book by ID
+ */
+exports.getOneBook = async (req, res, next) => {
+	try {
+		const userId = req.query.userId;
+		const bookId = new mongoose.Types.ObjectId(req.params.id);
+
+		const pipeline = [
+			{ $match: { _id: bookId } },
+			{
+				$addFields: {
+					...PIPELINE_STAGES.addFields.$addFields,
+					...(userId && {
+						userRating: {
+							$let: {
+								vars: {
+									userRating: {
+										$filter: {
+											input: "$ratings",
+											as: "rating",
+											cond: { $eq: ["$$rating.userId", userId] },
+										},
+									},
+								},
+								in: { $arrayElemAt: ["$$userRating.grade", 0] },
+							},
+						},
+					}),
+				},
+			},
+			{
+				$project: {
+					...PIPELINE_STAGES.project.$project,
+					...(userId && { userRating: 1 }),
+				},
+			},
+		];
+
+		const [book] = await Book.aggregate(pipeline).hint(INDEXES.byId);
+
+		if (!book) {
+			return res.status(404).json({ error: "Book not found" });
+		}
+
+		res.status(200).json(book);
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
+ * Gets all books with optional filtering
+ */
+exports.getAllBooks = async (req, res, next) => {
+	try {
+		const { title, author, year, rating, genre, page, limit } = req.query;
+		const query = {};
+		const queryOr = [];
+
+		if (title || author) {
+			queryOr.push(
+				...[
+					title && { title: new RegExp(title, "i") },
+					author && { author: new RegExp(author, "i") },
+				].filter(Boolean),
+			);
+		}
+
+		if (queryOr.length) query.$or = queryOr;
+		if (year) query.year = Number.parseInt(year, 10);
+		if (rating) query.averageRating = { $gte: Number.parseFloat(rating) };
+		if (genre) {
+			query.$or = [...(query.$or || []), { genre: new RegExp(genre, "i") }];
+		}
+
+		if (!page && !limit) {
+			const books = await Book.aggregate([
+				{ $match: query },
+				{ $sort: { title: 1 } },
+				{ $addFields: PIPELINE_STAGES.addFields.$addFields },
+				{ $project: PIPELINE_STAGES.project.$project },
+			]).hint(INDEXES.byTitleAuthor);
+
+			return res.status(200).json(books);
+		}
+
+		const pageNum = Number.parseInt(page, 10) || 1;
+		const limitNum = Number.parseInt(limit, 10) || 12;
+		const skip = (pageNum - 1) * limitNum;
+
+		const [result] = await Book.aggregate([
+			{ $match: query },
+			{
+				$facet: {
+					totalBooks: [{ $count: "count" }],
+					books: [
+						{ $sort: { title: 1 } },
+						{ $skip: skip },
+						{ $limit: limitNum },
+						{ $addFields: PIPELINE_STAGES.addFields.$addFields },
+						{ $project: PIPELINE_STAGES.project.$project },
+					],
+				},
+			},
+			{
+				$project: {
+					totalBooks: { $arrayElemAt: ["$totalBooks.count", 0] },
+					books: 1,
+					hasMore: {
+						$lt: [
+							{ $add: [skip, { $size: "$books" }] },
+							{ $arrayElemAt: ["$totalBooks.count", 0] },
+						],
+					},
+				},
+			},
+		]).hint(INDEXES.byTitleAuthor);
+
+		res.status(200).json(result);
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
+ * Gets top 3 rated books
+ */
+exports.getBestRatedBooks = async (req, res, next) => {
+	try {
+		const books = await Book.aggregate([
+			{ $sort: { averageRating: -1 } },
+			{ $limit: 3 },
+			{ $addFields: PIPELINE_STAGES.addFields.$addFields },
+			{ $project: PIPELINE_STAGES.project.$project },
+		]).hint(INDEXES.byRating);
+
+		res.status(200).json(books);
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
+ * Rates a book
  */
 exports.rateBook = async (req, res, next) => {
 	try {
-		const book = await Book.findById(req.params.id);
+		const { rating, userId } = req.validatedData;
+		const book = await Book.findOne({ _id: req.params.id });
+
 		if (!book) {
-			throw new Error("404: Book not found");
+			return res.status(404).json({ error: "Book not found" });
 		}
 
-		const rating = req.validatedRating;
+		if (book.ratings.some((r) => r.userId === userId)) {
+			return res
+				.status(400)
+				.json({ error: "You have already rated this book" });
+		}
 
-		book.ratings.push({ userId: req.auth.userId, grade: rating });
+		book.ratings.push({ userId, grade: rating });
+		book.averageRating = Number(
+			(
+				(book.averageRating * (book.ratings.length - 1) + rating) /
+				book.ratings.length
+			).toFixed(3),
+		);
 
-		const ratingCount = book.ratings.length;
-		const newTotal = book.averageRating * (ratingCount - 1) + rating;
-		book.averageRating = Number((newTotal / ratingCount).toFixed(3));
+		await book.save();
 
-		const updatedBook = await book.save();
-		const responseBook = {
-			...updatedBook.toObject(),
-			averageRating: Number(updatedBook.averageRating.toFixed(1))
-		};
+		const [formattedBook] = await Book.aggregate([
+			{ $match: { _id: book._id } },
+			{
+				$addFields: {
+					...PIPELINE_STAGES.addFields.$addFields,
+					userRating: rating,
+				},
+			},
+			{
+				$project: {
+					...PIPELINE_STAGES.project.$project,
+					userRating: 1,
+				},
+			},
+		]);
 
-		res.status(200).json(responseBook);
+		res.status(200).json(formattedBook);
+	} catch (error) {
+		next(error);
+	}
+};
+
+/**
+ * Serves book images
+ */
+exports.getBookImage = async (req, res, next) => {
+	try {
+		const book = await Book.findById(req.params.id, {
+			image: 1,
+			imageContentType: 1,
+		});
+		if (!book?.image) {
+			return res.status(404).json({ error: "Image not found" });
+		}
+
+		res.set("Content-Type", book.imageContentType);
+		res.send(book.image);
 	} catch (error) {
 		next(error);
 	}

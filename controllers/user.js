@@ -1,81 +1,77 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+require("dotenv").config();
+
 const User = require("../models/User");
 
-const validateEmail = (email) => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
+// Email validation regex - compiled once for reuse
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Standard error messages
+const ERROR_MESSAGES = {
+  INVALID_EMAIL: "Invalid email format",
+  USER_EXISTS: "An error occurred while creating the user",
+  INVALID_CREDENTIALS: "Invalid email/password combination",
+  SERVER_ERROR: "An error occurred while creating the user"
 };
 
 /**
- * @description User registration handler
- * @goal Securely create new user accounts
- * - Validates email format and uniqueness
- * - Hashes the password using bcrypt for enhanced security
- * - Creates a new user in the MongoDB database
- * - Implements error handling for database operations and validation
+ * Creates new user accounts with secure password hashing
  */
-exports.signup = async (req, res, next) => {
-	try {
-		const { email, password } = req.body;
+exports.signup = async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-		if (!validateEmail(email)) {
-			throw new Error("400: Invalid email format");
-		}
-		
-		if (!password) {
-			throw new Error("400: Password is required");
-		}
+    // Validate email format
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ error: ERROR_MESSAGES.INVALID_EMAIL });
+    }
 
-		const existingUser = await User.findOne({ email: req.body.email });
-		if (existingUser) {
-			throw new Error("400: Email already in use");
-		}
+    // Check for existing user
+    const existingUser = await User.findOne({ email }, { _id: 1 }).lean();
+    if (existingUser) {
+      return res.status(409).json({ error: ERROR_MESSAGES.USER_EXISTS });
+    }
 
-		const hash = await bcrypt.hash(req.body.password, 10);
-		const user = new User({
-			email: req.body.email,
-			password: hash,
-		});
-		await user.save();
-		res.status(201).json({ message: "User created successfully" });
-	} catch (error) {
-		next(error);
-	}
+    // Create new user with hashed password
+    const hash = await bcrypt.hash(password, 10);
+    await User.create({ email, password: hash });
+
+    res.status(201).json({ message: "User created successfully" });
+
+  } catch (error) {
+    res.status(error.name === "ValidationError" ? 400 : 500)
+       .json({ error: error.name === "ValidationError" ? 
+         error.message : ERROR_MESSAGES.SERVER_ERROR });
+  }
 };
 
 /**
- * @description User login handler
- * @goal Authenticate users and provide secure access tokens
- * - Verifies user credentials against stored data
- * - Issues a JWT upon successful authentication
- * - Implements proper error handling for security
+ * Authenticates users and issues JWT tokens
  */
-exports.login = async (req, res, next) => {
-	try {
-		const { email, password } = req.body;
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-		if (!validateEmail(email) || !password) { 
-			throw new Error("400: Invalid email or password");
-		}
+    // Find user and verify credentials
+    const user = await User.findOne({ email }).lean();
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ error: ERROR_MESSAGES.INVALID_CREDENTIALS });
+    }
 
-		const user = await User.findOne({ email: req.body.email });
-		if (!user) {
-			throw new Error("400: Invalid email/password combination");
-		}
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user._id },
+      req.app.get("jwtSecret"),
+      { expiresIn: "24h" }
+    );
 
-		const valid = await bcrypt.compare(req.body.password, user.password);
-		if (!valid) {
-			throw new Error("400: Invalid email/password combination");
-		}
+    res.status(200).json({
+      userId: user._id,
+      token
+    });
 
-		res.status(200).json({
-			userId: user._id,
-			token: jwt.sign({ userId: user._id }, req.app.get("jwtSecret"), {
-				expiresIn: "24h",
-			}),
-		});
-	} catch (error) {
-		next(error);
-	}
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 };

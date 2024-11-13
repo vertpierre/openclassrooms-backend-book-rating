@@ -1,28 +1,72 @@
 const express = require("express");
+const router = express.Router();
 const bookCtrl = require("../controllers/books");
 const { isAuth, isOwner, isRated } = require("../middleware/access");
+const {
+	validateBookInput,
+	validateRatingInput,
+} = require("../middleware/validateInput");
 const { uploadImage, optimizeImage } = require("../middleware/image");
-const { validateBookInput, validateRatingInput } = require("../middleware/validateInput");
 
-const router = express.Router();
+// Group routes by access level and operation type
+const PUBLIC_ROUTES = {
+	GET: [
+		{ path: "/", handler: bookCtrl.getAllBooks },
+		{ path: "/bestrating", handler: bookCtrl.getBestRatedBooks },
+		{ path: "/:id", handler: bookCtrl.getOneBook },
+		{ path: "/:id/image", handler: bookCtrl.getBookImage },
+	],
+};
 
-/**
- * @description Public routes (no authentication required)
- * @goal Allow unrestricted access to book information
- */
-router.get("/", bookCtrl.getAllBooks);
-router.get("/bestrating", bookCtrl.getBestRatedBooks);
-router.get("/:id", bookCtrl.getOneBook);
+const PROTECTED_ROUTES = {
+	POST: [
+		{
+			path: "/",
+			middleware: [isAuth, uploadImage, validateBookInput, optimizeImage],
+			handler: bookCtrl.createBook,
+		},
+		{
+			path: "/:id/rating",
+			middleware: [isAuth, isRated, validateRatingInput],
+			handler: bookCtrl.rateBook,
+		},
+	],
+	PUT: [
+		{
+			path: "/:id",
+			middleware: [
+				isAuth,
+				isOwner,
+				uploadImage,
+				validateBookInput,
+				optimizeImage,
+			],
+			handler: bookCtrl.modifyBook,
+		},
+	],
+	DELETE: [
+		{
+			path: "/:id",
+			middleware: [isAuth, isOwner],
+			handler: bookCtrl.deleteBook,
+		},
+	],
+};
 
-/**
- * @description Protected routes (authentication required)
- * @goal Secure book manipulation operations and user-specific actions
- * - Uses auth middleware to ensure user authentication before accessing sensitive operations
- * - Implements image middleware for efficient file upload handling in create and update operations
- */
-router.post("/", isAuth, uploadImage, validateBookInput, optimizeImage, bookCtrl.createBook);
-router.put("/:id", isAuth, isOwner, uploadImage, validateBookInput, optimizeImage, bookCtrl.modifyBook);
-router.delete("/:id", isAuth, isOwner, bookCtrl.deleteBook);
-router.post("/:id/rating", isAuth, isRated, validateRatingInput, bookCtrl.rateBook);
+// Register public routes
+for (const route of PUBLIC_ROUTES.GET) {
+	router.get(route.path, route.handler);
+}
+
+// Register protected routes
+for (const [method, routes] of Object.entries(PROTECTED_ROUTES)) {
+	for (const route of routes) {
+		router[method.toLowerCase()](
+			route.path,
+			...route.middleware,
+			route.handler,
+		);
+	}
+}
 
 module.exports = router;

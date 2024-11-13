@@ -23,9 +23,6 @@ package-lock.json
 
 # Miscellaneous
 scripts/
-utils/
 logs/
 tmp/
-.vscode/
 .cursorignore
-project.md

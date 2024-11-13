@@ -1,61 +1,88 @@
 /**
- * @description Sanitize input to prevent XSS attacks
- * @goal Ensure user input is safe for processing and storage
+ * @description Input validation and sanitization middleware
  */
-const sanitizeInput = (input) => {
-    if (typeof input === 'number') {
-        return input;
-    }
-    return input.replace(/[<>"'/]/g, (char) => {
-        const entities = {
-            "<": "&lt;",
-            ">": "&gt;",
-            '"': "&quot;",
-            "'": "&#39;",
-            "/": "&#x2F;",
-        };
-        return entities[char];
-    });
+
+const REQUIRED_FIELDS = ["title", "author", "year", "genre"];
+const YEAR_CONSTRAINTS = {
+	min: -6000,
+	max: new Date().getFullYear(),
+};
+const RATING_CONSTRAINTS = { min: 1, max: 5 };
+
+// XSS protection map
+const XSS_ENTITY_MAP = {
+	"<": "&lt;",
+	">": "&gt;",
+	'"': "&quot;",
+	"'": "&#39;",
+	"/": "&#x2F;",
+	"&": "&amp;",
 };
 
-/**
- * @description Validate and sanitize book input data
- * @goal Ensure book data is complete, valid, and safe before processing
- */
+// Memoized input sanitization
+const sanitizeInput = (() => {
+	const cache = new Map();
+	const MAX_CACHE_SIZE = 1000;
+
+	return (input) => {
+		if (typeof input === "number") return input;
+		if (cache.has(input)) return cache.get(input);
+
+		const sanitized = input.replace(/[<>"'/]/g, (char) => XSS_ENTITY_MAP[char]);
+
+		if (cache.size >= MAX_CACHE_SIZE) {
+			cache.delete(cache.keys().next().value);
+		}
+		cache.set(input, sanitized);
+		return sanitized;
+	};
+})();
+
+// Validation helpers
+const validateYear = (year) => {
+	const yearNum = Number(year);
+	if (
+		!Number.isInteger(yearNum) ||
+		yearNum < YEAR_CONSTRAINTS.min ||
+		yearNum > YEAR_CONSTRAINTS.max
+	) {
+		throw new Error(
+			"400: Invalid year. Must be an integer between -6000 and current year",
+		);
+	}
+	return yearNum;
+};
+
+const validateRating = (rating) => {
+	if (rating === undefined) {
+		throw new Error("400: Rating is required");
+	}
+	const ratingNum = Number(rating);
+	if (
+		!Number.isInteger(ratingNum) ||
+		ratingNum < RATING_CONSTRAINTS.min ||
+		ratingNum > RATING_CONSTRAINTS.max
+	) {
+		throw new Error("400: Rating must be an integer between 1 and 5");
+	}
+	return ratingNum;
+};
+
 const validateBookInput = (req, res, next) => {
 	try {
 		const bookObject = req.body.book ? JSON.parse(req.body.book) : req.body;
-
-		if (!bookObject || typeof bookObject !== 'object') {
+		if (!bookObject || typeof bookObject !== "object") {
 			throw new Error("400: Invalid book data");
 		}
 
-		const requiredFields = ["title", "author", "year", "genre"];
-		for (const field of requiredFields) {
+		for (const field of REQUIRED_FIELDS) {
 			if (!bookObject[field]) {
 				throw new Error(`400: Invalid or missing ${field}`);
 			}
-			bookObject[field] = sanitizeInput(bookObject[field]);
-		}
-
-		if (bookObject.year) {
-			const yearNum = Number(bookObject.year);
-			if (!Number.isInteger(yearNum) || yearNum < -6000 || yearNum > new Date().getFullYear()) {
-				throw new Error("400: Invalid year. Must be an integer between -6000 and current year");
-			}
-			bookObject.year = yearNum;
-		}
-
-		if (bookObject.ratings && bookObject.ratings.grade !== undefined) {
-			if (bookObject.ratings.grade === "") {
-				bookObject.ratings.grade = 0;
-			} else {
-				const gradeNum = Number(bookObject.ratings.grade);
-				if (!Number.isInteger(gradeNum) || gradeNum < 0 || gradeNum > 5) {
-					throw new Error("400: Invalid rating. Must be an integer between 0 and 5");
-				}
-				bookObject.ratings.grade = gradeNum;
-			}
+			bookObject[field] =
+				field === "year"
+					? validateYear(bookObject[field])
+					: sanitizeInput(bookObject[field]);
 		}
 
 		req.validatedBook = bookObject;
@@ -65,32 +92,16 @@ const validateBookInput = (req, res, next) => {
 	}
 };
 
-/**
- * @description Validate rating input data
- * @goal Ensure rating data is valid before processing
- */
 const validateRatingInput = (req, res, next) => {
-    try {
-        const bookObject = req.body.book ? JSON.parse(req.body.book) : req.body;
-
-        if (!bookObject || typeof bookObject !== 'object') {
-            throw new Error("400: Invalid rating data");
-        }
-
-        if (bookObject.rating === undefined) {
-            throw new Error("400: Rating is required");
-        }
-
-        const ratingNum = Number(bookObject.rating);
-        if (!Number.isInteger(ratingNum) || ratingNum < 0 || ratingNum > 5) {
-            throw new Error("400: Rating must be an integer between 0 and 5");
-        }
-
-        req.validatedRating = ratingNum;
-        next();
-    } catch (error) {
-        next(error);
-    }
+	try {
+		req.validatedData = {
+			rating: validateRating(req.body.rating),
+			userId: req.auth.userId,
+		};
+		next();
+	} catch (error) {
+		next(error);
+	}
 };
 
 module.exports = { validateBookInput, validateRatingInput };

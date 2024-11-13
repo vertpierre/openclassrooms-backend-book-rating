@@ -1,54 +1,71 @@
+/**
+ * @description Access control middleware
+ */
+
 const jwt = require("jsonwebtoken");
 const Book = require("../models/Books");
 
-/**
- * @description JWT-based authentication middleware
- * @goal Secure API routes by verifying user tokens and attaching user information to requests
- * - Uses environment variables for JWT secret to enhance security
- * - Extracts only necessary information (userId) from the token for efficiency
- */
+const ACCESS_TYPES = {
+	OWNER: "owner",
+	RATE: "rate",
+};
+
+const PROJECTIONS = {
+	owner: { userId: 1 },
+	rate: { ratings: { $elemMatch: { userId: null } } },
+};
+
 const isAuth = (req, res, next) => {
-    try {
-        const token = req.headers.authorization.split(" ")[1];
-        const decodedToken = jwt.verify(token, req.app.get("jwtSecret"));
-        const userId = decodedToken.userId;
-        req.auth = { userId };
-        next();
-    } catch (error) {
-        throw new Error("403: Unauthorized request");
-    }
+	try {
+		const authHeader = req.headers.authorization;
+		if (!authHeader?.startsWith("Bearer ")) {
+			throw new Error();
+		}
+
+		const token = authHeader.slice(7);
+		const { userId } = jwt.verify(token, req.app.get("jwtSecret"));
+		req.auth = { userId };
+		next();
+	} catch {
+		next(new Error("403: Unauthorized request"));
+	}
 };
 
-/**
- * @description Validate user access to modify, delete, or rate a book
- * @goal Ensure proper authorization for book-related actions
- */
-const hasAccess = async (req, res, next, action) => {
-    try {
-        const book = await Book.findById(req.params.id);
-        if (!book) {
-            throw new Error("404: Book not found");
-        }
-        
-        if (action === 'owner') {
-            if (book.userId.toString() !== req.auth.userId) {
-                throw new Error("403: Unauthorized access to this book");
-            }
-        } else if (action === 'rate') {
-            if (book.ratings.some((r) => r.userId === req.auth.userId)) {
-                throw new Error("400: You have already rated this book");
-            }
-        } else {
-            throw new Error("400: Invalid action");
-        }
-        
-        next();
-    } catch (error) {
-        next(error);
-    }
+const accessCheckers = {
+	owner: (book, userId) => {
+		if (book.userId.toString() !== userId) {
+			throw new Error("403: Unauthorized access to this book");
+		}
+	},
+	rate: (book) => {
+		if (book.ratings?.length) {
+			throw new Error("400: You have already rated this book");
+		}
+	},
 };
 
-const isOwner = (req, res, next) => hasAccess(req, res, next, 'owner');
-const isRated = (req, res, next) => hasAccess(req, res, next, 'rate');
+const hasAccess = async (req, res, next, accessType) => {
+	try {
+		const projection = { ...PROJECTIONS[accessType] };
+		if (accessType === ACCESS_TYPES.RATE) {
+			projection.ratings.$elemMatch.userId = req.auth.userId;
+		}
+
+		const book = await Book.findById(req.params.id, projection).lean();
+		if (!book) {
+			throw new Error("404: Book not found");
+		}
+
+		accessCheckers[accessType](book, req.auth.userId);
+		next();
+	} catch (error) {
+		next(error);
+	}
+};
+
+const isOwner = (req, res, next) =>
+	hasAccess(req, res, next, ACCESS_TYPES.OWNER);
+const isRated = (req, res, next) =>
+	hasAccess(req, res, next, ACCESS_TYPES.RATE);
 
 module.exports = { isAuth, isOwner, isRated };
